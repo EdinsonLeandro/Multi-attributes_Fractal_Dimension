@@ -44,20 +44,17 @@ switch assy
     otherwise
         try
             reg = fscanf(assy,'%10f');
-            surface = reshape(reg,3,[])';
+            surfaceData = reshape(reg,3,[])';
         catch id
             errordlg('The file does not have the format X-Y-Time',...
                 'Error!');
         end 
 end
 
-% Number of points on the surface of interest.
-nPointsSurface = size(surface,1);
-
 % ---------------------------- SESMIC DATA ----------------------------- %
 
 % Number of attributes to use in the algorithm
-nAttributes = size(files,2);
+nAttributes = size(files, 2);
 
 % Raise error dialog if the sum of the weights is different from one,
 % or they differ from the number of input attributes.
@@ -91,13 +88,25 @@ end
 % interval, the number of samples and the number of traces are the same.
 % Also, they are divided by 100 to bring them to metric scale.
 
-traceCoordinates = zeros(nTraces, 2);
+% Open and read all trace headers from segy data
+[~ , allTraceHeaders] = ReadSegy(files{1}, 'SkipData',1);
 
-% <B = A.'> is equal to <B = transpose(A)>
-traceCoordinates(:,1) = ReadSegyTraceHeaderValue(files{1},'key','cdpX').';
-traceCoordinates(:,2) = ReadSegyTraceHeaderValue(files{1},'key','cdpY').';
+% Coordinates of seismic traces and Number of traces
+coordinatesSeismicTraces = zeros(nTraces, 3);
 
-traceCoordinates = round(traceCoordinates./100);
+for iTrace = 1:nTraces
+    % Divide each coordinate by 100 to bring them to metric scale
+    coordinatesSeismicTraces(iTrace, :) = [round(allTraceHeaders(iTrace).SourceX/100), ...
+                                           round(allTraceHeaders(iTrace).SourceY/100), ...
+                                           allTraceHeaders(iTrace).TraceNumber];
+end
+
+
+% Save X-Y coordinates and the number of seismic traces where
+% surface data was interpolated. 
+selectedCoordinates = selectSeismicTraces(nTraces,...
+                                          surfaceData,...
+                                          coordinatesSeismicTraces);
 
 %% Initial Calculations
 % ----------------------------- TIME COLUMN ---------------------------- %
@@ -125,11 +134,18 @@ k2 = ceil(TIME_BELOW_HORIZON/dtSample);
 % ------------------------ PREALLOCATING MATRICES ----------------------- %
 % ----------------------------------------------------------------------- %
 
+%%%% nPointsSurface changed by nTracesSelected
+% Number of points on the surface of interest.
+% nPointsSurface = size(surfaceData, 1);
+
+% Number of samples selected to Fractal dimension calculations.
+nTracesSelected = size(selectedCoordinates, 1);
+
 % This matrix will store the results of Fractal Dimension calculations.
-resultFractalDim = zeros(nPointsSurface,3);
+resultFractalDim = zeros(nTracesSelected, 3);
 
 % This vector will store the values ??of R2 in order to make a histogram.
-allR2 = zeros(nPointsSurface,1);
+allR2 = zeros(nTracesSelected, 1);
 
 % Definition of random numbers between 1 and the number of traces in
 % seismic volumes. This will represent random traces, in order to perform
@@ -156,7 +172,7 @@ divisorLength = zeros(2, 1, NUMTRACESQC);
 
 % Number of the traces used to calculations (the coordinates
 % of the surface is equal to the coordinate of the seismic trace).
-traceNumbers = zeros(1, nPointsSurface) ;
+% traceNumbers = zeros(1, nTracesSelected) ;
 
 %% START %%
 % ######## %
@@ -174,34 +190,34 @@ conditionQC = false;
 % traceQC: index that indicates the trace number to QC.
 traceQC = 1;
 
-for iPoint = 1 : nPointsSurface
+for iPoint = 1 : nTracesSelected
     
     % Plot waitbar
-    waitbar(iPoint/nPointsSurface,wb)
+    waitbar(iPoint/nTracesSelected, wb)
     
-    % Find the position where the surface coordinate is equal to seismic
-    % trace coordinate.
-    condition_time_suface = false;
-    while condition_time_suface == false && traceNum < nTraces
-        condition_time_suface = isequal(surface(iPoint,1:2), traceCoordinates(traceNum,1:2));
-        traceNum = traceNum + 1;
-    end
+%     % Find the position where the surface coordinate is equal to seismic
+%     % trace coordinate.
+%     condition_time_suface = false;
+%     while condition_time_suface == false && traceNum < nTraces
+%         condition_time_suface = isequal(surfaceData(iPoint,1:2), coordinatesSeismicTraces(traceNum,1:2));
+%         traceNum = traceNum + 1;
+%     end
+% 
+%     % When traceNum>nTraces the search has reached the end of seismic data. This
+%     % can also happen if the coordinates of the area of ??interest are not
+%     % within the seismic data. In either case, program execution must stop.
+%     
+%     if traceNum >= nTraces
+%         errordlg('Finalizó la búsqueda dentro de los datos sísmicos',...
+%                 'Error!');
+%         break
+%     end
+%     
+%     traceNum = traceNum - 1;
+%     
+%     traceNumbers(iPoint) = traceNum;
     
-    % When traceNum>nTraces the search has reached the end of seismic data. This
-    % can also happen if the coordinates of the area of ??interest are not
-    % within the seismic data. In either case, program execution must stop.
-    
-    if traceNum >= nTraces
-        errordlg('Finalizó la búsqueda dentro de los datos sísmicos',...
-                'Error!');
-        break
-    end
-    
-    traceNum = traceNum - 1;
-    
-    traceNumbers(iPoint) = traceNum;
-    
-    disp(['Traza Sísmica nro:  ',  num2str(traceNum)])
+    fprintf('Seismic Trace number: %d', selectedCoordinates(iPoint, 3));
     
     % Reading of the "traceNum-th" trace found in seismic data.
     Seismic_Trace = zeros(nSamples,nAttributes);
@@ -224,7 +240,7 @@ for iPoint = 1 : nPointsSurface
         % Find the position of the time from the surface in the
         % time column of seismic data, to take data from
         % amplitudes of the corresponding attributes.
-        t_surface = floor(surface(iPoint,3));
+        t_surface = floor(surfaceData(iPoint,3));
 
         % Check if it is a multiple of 4. Otherwise, take the multiple
         % immediate higher
@@ -276,7 +292,7 @@ for iPoint = 1 : nPointsSurface
         
         % This matrix will keep the results of each FRACTAL DIMENSION
         % calculations. The order is X-Y-D.
-        resultFractalDim(iPoint,:) = [surface(iPoint,1) surface(iPoint,2) D]; 
+        resultFractalDim(iPoint,:) = [surfaceData(iPoint,1) surfaceData(iPoint,2) D]; 
 
         % Save R2 values, in order to perform a histogram with the results.
         allR2(iPoint)=R2;
@@ -302,7 +318,7 @@ for iPoint = 1 : nPointsSurface
             params(traceQC,4) = R2;
             
             % Coordinates X/Y - r/L
-            coordinatesQC(traceQC,:) = surface(iPoint,1:2); 
+            coordinatesQC(traceQC,:) = surfaceData(iPoint,1:2); 
 
             % Time column in window analysis (FD_QC_TIME), according to
             % time found in the surface of interest.            
