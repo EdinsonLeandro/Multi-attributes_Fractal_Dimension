@@ -218,22 +218,21 @@ for iPoint = 1 : nTracesSelected
 %     traceNumbers(iPoint) = traceNum;
     
     fprintf('Seismic Trace number: %d', selectedCoordinates(iPoint, 3));
-    
-    % Reading of the "traceNum-th" trace found in seismic data.
-    Seismic_Trace = zeros(nSamples,nAttributes);
-    for i=1:nAttributes 
-        [Data,Segy_TH]=ReadSegy(files{i},'traces',traceNum);
-        Seismic_Trace(:,i) = Data;
+
+    % Read trace number selected in seismic data.
+    seismicData = zeros(nSamples, nAttributes);
+    for iAttribute = 1 : nAttributes
+        % Read Segy data of each input
+        [Data, ~] = ReadSegy(files{iAttribute}, 'traces', selectedCoordinates(iPoint, 3));
+        seismicData(:, iAttribute) = Data;
     end
     
-    % Check if any of the traces are empty. If this case, it will not
-    % calculate Fractal Dimension.    
-    condition_tr_empty = any(all(Seismic_Trace==0)==1);
+    % Check if any of the seismic attributes data are empty. If this case,
+    % it will not calculate Fractal Dimension.    
+    isEmptyData= any(all(seismicData==0));
 
-    % Both conditions must be met to continue calculations. Otherwise, 
-    % it will continue to the next trace.
-
-    if (condition_tr_empty == false) && (condition_time_suface == true)
+    % Continue calculations is seismic attributes data is not empty.
+    if ~isEmptyData
         % Save the time found
         % ------------------------------------------------------------
         
@@ -258,7 +257,7 @@ for iPoint = 1 : nTracesSelected
         Tr_Analysis = zeros(k1+k2+1,nAttributes);
 
         for i = 1:nAttributes
-            Tr_Analysis(:,i) = Seismic_Trace(k-k1:k+k2,i);
+            Tr_Analysis(:,i) = seismicData(k-k1:k+k2,i);
         end
         
         % Input data normalization
