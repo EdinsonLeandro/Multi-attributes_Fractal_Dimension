@@ -4,15 +4,15 @@ function X=normalization(V,W)
 %
 % Input parameters:
 % V: Array with the data to be normalized.
-% W: Array with the data in the area of ??interest.
+% W: Array with the data in the area of interest.
 %
 % Output Parameters:
 % X: Array with each normalized data
 
-% dev: Data Deviation. Difference with its average in the area of ??interest.
-desv=zeros(size(V));
-for i=1:size(V,2)
-    desv(:,i)=V(:,i)-mean(W(:,i));
+% dev: Data Deviation. Difference with its average in the area of interest.
+desv = zeros(size(V));
+for i = 1:size(V,2)
+    desv(:,i) = V(:,i) - mean(W(:,i));
 end
 
 maxdesv=max(abs(desv));

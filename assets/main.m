@@ -1,8 +1,9 @@
 clc
 clear all
 
-%% INPUT DATA: Seismic Volume and Surface of interest %%
-% #################################################### %
+%% ################################################## %%
+%  INPUT DATA: Seismic Volume and Surface of interest  %
+% ###################################################  %
 
 % Definition of time window, above and below the horizon of interest.
 TIME_ABOVE_HORIZON = 0;
@@ -28,7 +29,9 @@ fileFractalDim = {'Data/EM_MER-U2_Fractal_Dimension.prn'};
 % Number of traces to perform Quality Control (QC )of the calculations.
 NUMTRACESQC = 5;
 
-%% Load data %%
+%% ######### %%
+%  Load data  %
+%  #########  %
 
 % ------------------------------ SURFACE ------------------------------- %
 
@@ -83,36 +86,11 @@ else
 
 end
 
-% X-Y coordinates of all traces in the seismic volume. These coordinates
-% will be the same in all input seismic volumes, because the sampling
-% interval, the number of samples and the number of traces are the same.
-% Also, they are divided by 100 to bring them to metric scale.
+%% ################## %%
+%  Data preprocessing  %
+%  ##################  %
 
-% Open and read all trace headers from segy data
-[~ , allTraceHeaders] = ReadSegy(files{1}, 'SkipData',1);
-
-% Coordinates of seismic traces and Number of traces
-coordinatesSeismicTraces = zeros(nTraces, 3);
-
-for iTrace = 1:nTraces
-    % Divide each coordinate by 100 to bring them to metric scale
-    coordinatesSeismicTraces(iTrace, :) = [round(allTraceHeaders(iTrace).SourceX/100), ...
-                                           round(allTraceHeaders(iTrace).SourceY/100), ...
-                                           allTraceHeaders(iTrace).TraceNumber];
-end
-
-
-% Save X-Y coordinates and the number of seismic traces where
-% surface data was interpolated. 
-selectedCoordinates = selectSeismicTraces(nTraces,...
-                                          surfaceData,...
-                                          coordinatesSeismicTraces);
-
-%% Initial Calculations
 % ----------------------------- TIME COLUMN ---------------------------- %
-% ---------------------------------------------------------------------- %
-
-% Time column. Time is assumed to start at zero.
 
 % Reade segy header
 [segyHeader] = ReadSegyHeader(files{1});
@@ -126,13 +104,45 @@ selectedCoordinates = selectSeismicTraces(nTraces,...
 % From "segyTraceHeader" read "Delay Recording Time".
 timeColumn = segyHeader.time*1000 - segyHeader.dt/1000 + segyTrace1Header.DelayRecordingTime;
 
-% k1 and k2. Number of samples to extract seismic data for Fractal 
+% nTop and nBottom. Number of samples that defines the top and the bottom
+% of time window analysis. extract seismic data for Fractal 
 % Dimension analysis. It depends on the time window previously chosen.
-k1 = ceil(TIME_ABOVE_HORIZON/dtSample);
-k2 = ceil(TIME_BELOW_HORIZON/dtSample);
+nTop = ceil(TIME_ABOVE_HORIZON/dtSample);
+nBottom = ceil(TIME_BELOW_HORIZON/dtSample);
+
+% ----------------------------- SEISMIC DATA ---------------------------- %
+
+% X-Y coordinates of all traces in the seismic volume. These coordinates
+% will be the same in all input seismic volumes, because the sampling
+% interval, the number of samples and the number of traces are the same.
+% Also, they are divided by 100 to bring them to metric scale.
+
+% Open and read all trace headers from segy data
+[~ , allTraceHeaders] = ReadSegy(files{1}, 'SkipData',1);
+
+% Coordinates of seismic traces and Number of traces
+coordinatesSeismicTraces = zeros(nTraces, 3);
+
+for iTrace = 1:nTraces
+    % Divide each coordinate by 100 to bring them to metric scale
+    coordinatesSeismicTraces(iTrace, :) = [round(allTraceHeaders(iTrace).SourceX / 100), ...
+                                           round(allTraceHeaders(iTrace).SourceY / 100), ...
+                                           allTraceHeaders(iTrace).TraceNumber];
+end
+
+
+% Select X-Y coordinates and the number of seismic traces where surface
+% data was interpolated. 
+selectedCoordinates = selectEqualCoord(nTraces,...
+                                       surfaceData,...
+                                       coordinatesSeismicTraces);
+
+% ----------------------------- SURFACE DATA ---------------------------- %
+
+% Select surface data with coordinates equal to seismic data.
+selectedSurface = selectEqualCoord(nTraces, selectedCoordinates, surfaceData);
 
 % ------------------------ PREALLOCATING MATRICES ----------------------- %
-% ----------------------------------------------------------------------- %
 
 %%%% nPointsSurface changed by nTracesSelected
 % Number of points on the surface of interest.
@@ -154,7 +164,7 @@ rng(3, 'twister');
 tracesQC = round(rand(1, NUMTRACESQC) * nTraces);
 
 % 1. Save seismic attributes traces.
-seismicTraces = zeros(k1+k2+1, nAttributes, NUMTRACESQC);
+seismicTraces = zeros(nTop+nBottom+1, nAttributes, NUMTRACESQC);
 
 % 2. Save the number of traces, slope, Fractal Dimension and the
 % coefficient of determination R2
@@ -164,7 +174,7 @@ params = zeros(NUMTRACESQC, 4);
 coordinatesQC = zeros(NUMTRACESQC, 2);
 
 % 4. Time interval analysis.
-timeAnalysis =  zeros(k1+k2+1, NUMTRACESQC);
+timeAnalysis =  zeros(nTop+nBottom+1, NUMTRACESQC);
 
 % 5. Save divisor (r) and total length (L). The length of both vectors is
 % unknown, so pre-allocation is made with a single column.
@@ -174,8 +184,9 @@ divisorLength = zeros(2, 1, NUMTRACESQC);
 % of the surface is equal to the coordinate of the seismic trace).
 % traceNumbers = zeros(1, nTracesSelected) ;
 
-%% START %%
-% ######## %
+%% ############################################ %%
+%  Multi-attributes Fractal Dimension Algorithm  %
+%  ############################################  %
 
 % Initialize waitbar
 wb = waitbar(0, 'Analyzing data');
@@ -233,40 +244,36 @@ for iPoint = 1 : nTracesSelected
 
     % Continue calculations is seismic attributes data is not empty.
     if ~isEmptyData
-        % Save the time found
-        % ------------------------------------------------------------
-        
-        % Find the position of the time from the surface in the
-        % time column of seismic data, to take data from
-        % amplitudes of the corresponding attributes.
-        t_surface = floor(surfaceData(iPoint,3));
+        % Get time sample of surface data. "floor": Round towards -inf.
+        timeSample = floor(selectedSurface(iPoint,3));
 
-        % Check if it is a multiple of 4. Otherwise, take the multiple
-        % immediate higher
-        C = mod(t_surface,dtSample);
-        while C~=0
-            t_surface = t_surface - 1;
-            C=mod(t_surface,dtSample);
+        % Check if "timeSample" is a multiple of sampling interval of seismic
+        % data (4 miliseconds in this case).
+        % Otherwise, take the next higher multiple.
+        modulus = mod(timeSample, dtSample);
+        while modulus~=0
+            timeSample = timeSample - 1;
+            modulus = mod(timeSample, dtSample);
         end
 
-        % Find when surface time is equal to time vector.
-        k=find(t_surface == timeColumn);
+        % Find the position of "timeSample" in "timeColumn" vector.
+        indexTimeSample = find(timeSample == timeColumn);
         
-        % According to the position located, the values ??of attributes
-        % are extracted using the time window previously defined.
-        Tr_Analysis = zeros(k1+k2+1,nAttributes);
+        % Select seismic attributes data between time window previously
+        % defined. This will be the data under analysis.
+        analyzedData = zeros(nTop+nBottom+1,nAttributes);
 
         for i = 1:nAttributes
-            Tr_Analysis(:,i) = seismicData(k-k1:k+k2,i);
+            analyzedData(:,i) = seismicData(indexTimeSample - nTop : indexTimeSample + nBottom, i);
         end
         
-        % Input data normalization
-        Tr_Analysis_norm = normalization(Tr_Analysis , Tr_Analysis);
+        % Normalization of data
+        normalizedData = normalization(analyzedData , analyzedData);
     
         % Multiplication of the normalized traces by previously defined 
         % weights.
         for i=1:nAttributes
-            Tr_Analysis_norm(:,i)= Tr_Analysis_norm(:,i) .* ALPHA(i);
+            normalizedData(:,i)= normalizedData(:,i) .* ALPHA(i);
         end
 
         % The time column in the window of interest does not use for
@@ -274,17 +281,17 @@ for iPoint = 1 : nTracesSelected
         % Because the input data was normalized, the time (in the last 
         % column of the array), must also range from 0 to 1.
         
-        Tr_Analysis_norm(:,end+1) = zeros(k1+k2+1,1);
+        normalizedData(:,end+1) = zeros(nTop+nBottom+1,1);
 
-        div = 1/(size(Tr_Analysis_norm,1)-1);
+        div = 1/(size(normalizedData,1)-1);
         h=0;
-        for i=1:size(Tr_Analysis_norm,1)
-            Tr_Analysis_norm(i,end)=h*div;
+        for i=1:size(normalizedData,1)
+            normalizedData(i,end)=h*div;
             h=h+1;
         end
         
         % Fractal Dimension calculation
-        [r,L,P,R2]=divplot2_EM(Tr_Analysis_norm);
+        [r,L,P,R2]=divplot2_EM(normalizedData);
 
         % Fractal Dimension of the curve in space N-Dimension.
         D = 1 + abs(P);
@@ -307,7 +314,7 @@ for iPoint = 1 : nTracesSelected
         if conditionQC
             % Input Trace: Each 3D from the matrix Tr_Analysis_norm_QC has
             % data traces.
-            seismicTraces(:,:,traceQC) = Tr_Analysis;
+            seismicTraces(:,:,traceQC) = analyzedData;
             
             % Each row will correspond to the data of each trace:
             % Trace Number - P - D - R2.
@@ -321,8 +328,8 @@ for iPoint = 1 : nTracesSelected
 
             % Time column in window analysis (FD_QC_TIME), according to
             % time found in the surface of interest.            
-            t_ini_analisis= t_surface - (k1 * dtSample);            
-            for i = 1 : (k1+k2+1)
+            t_ini_analisis= timeSample - (nTop * dtSample);            
+            for i = 1 : (nTop+nBottom+1)
                 timeAnalysis(i,traceQC) = t_ini_analisis + dtSample*(i-1);
             end
             
