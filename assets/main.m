@@ -29,6 +29,8 @@ fileFractalDim = {'Data/EM_MER-U2_Fractal_Dimension.prn'};
 % Number of traces to perform Quality Control (QC )of the calculations.
 NUMTRACESQC = 5;
 
+% Minimum and Maximum values of input seismic data. Extracted from Textual Header.
+MINMAX = {[-7469.42 6192.14], [0.0 5228.60], [0.0 125.0]};
 %% ######### %%
 %  Load data  %
 %  #########  %
