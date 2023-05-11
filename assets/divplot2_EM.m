@@ -1,4 +1,4 @@
-function [dividers,dn,m,R2] = divplot2_EM(X)
+function [dividers, length, slope, R2] = divplot2_EM(X)
 % The original function: [d,dn] = divplot2(X)
 %
 % plots a divider plot, log(dn) vs log(d) for divider lengths, d,
@@ -40,42 +40,53 @@ sumDelta = sum(delta,2);
 maxDivider = 1/4*mean(sumDelta);
 minDivider = sqrt(maxDivider);
 
-i = 1;
+% We don't know the number of interations. Therefore, preallocation of 
+% "dividers" and "nSteps" are only for reference.
 
 % Vector with divider used in each loop.
-
-dividers(i) = minDivider;
-nSteps = Inf;
+dividers = zeros(1,10);
+dividers(1) = minDivider;
 
 % nSteps: Number of steps to approximate data depending on the given divisor.
 % It changes from 2 (defined in by Middleton) to 3.
+nSteps = zeros(1,10);
+nStepsValue = Inf;
 
-
-% In each cycle, divisor will increase to calculate the new steps number.
-
-while nSteps > 2
+index = 1;
+while nStepsValue > 2
     % Number of steps.
-    nSteps = steps_EM(X, dividers(i));
+    nStepsValue = steps_EM(X, dividers(index));
     
-    % Next divisor.
-    dn(i) = nSteps*dividers(i);
-    i = i + 1;
-    dividers(i) = dividers(i-1) + minDivider;
+    % Save number of steps calculated
+    nSteps(index) = nStepsValue;
+    
+    % In each cycle, divisor will increase to calculate the new steps.
+    index = index + 1;
+    dividers(index) = dividers(index-1) + minDivider;
 end
 
-% dividers = dividers(1:i-1,:);
-dividers = dividers(1:i-1);
-ld = log10(dividers);
-ldn = log10(dn);
+% "nSteps" is, by definition, greater than zero. Find non zero elements.
+nonZeroIndex= find(nSteps);
 
-p = polyfit(ld,ldn,1); % linear regression
-f = polyval(p,ld);
-m = p(1);   % The slope is associated with Fractal Dimension(D) through
-            % the equation: D=1+abs(m).
+% Select only valid parameters.
+dividers = dividers(nonZeroIndex);
+nSteps = nSteps(nonZeroIndex);
+
+% Total measured distance for each divider
+length = nSteps.* dividers;
+
+logDivider = log10(dividers);
+logLength = log10(length);
+
+% Find the coefficients of a polynomial P(X), degree 1. Linear regression
+coefficients = polyfit(logDivider, logLength, 1);
+
+% The slope is associated with Fractal Dimension(D): D =1 + abs(slope).
+slope = coefficients(1);   
 
 % R^2 calculation.
-R2 = rsquare(ld,ldn,p);
-%            
+R2 = rsquare(logDivider, logLength, coefficients);
+
 % % Plot.
 % s = num2str(p(1));
 % ss = ['Slope = ' s];
