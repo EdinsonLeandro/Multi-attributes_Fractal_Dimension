@@ -29,8 +29,10 @@ fileFractalDim = {'Data/EM_MER-U2_Fractal_Dimension.prn'};
 % Number of traces to perform Quality Control (QC )of the calculations.
 NUMTRACESQC = 5;
 
-% Minimum and Maximum values of input seismic data. Extracted from Textual Header.
-MINMAX = {[-7469.42 6192.14], [0.0 5228.60], [0.0 125.0]};
+% Minimum and Maximum values of input seismic data.
+% Extracted from Textual Header.
+MINMAX = [[-7469.42, 6192.14]; [0.0, 5228.60]; [0.0, 125.0]];
+
 %% ######### %%
 %  Load data  %
 %  #########  %
@@ -64,10 +66,11 @@ nAttributes = size(files, 2);
 % Raise error dialog if the sum of the weights is different from one,
 % or they differ from the number of input attributes.
 if (sum(ALPHA) < 0.99)
-    error('The sum of weights are not equal to 1');
+    errordlg('The sum of weights are not equal to 1', 'Error!'); 
     
 elseif (nAttributes ~= size(ALPHA,2))
-    error('The number of weights is not equal to input attributes.'); 
+    errordlg('The number of weights is not equal to the input attributes.',...
+        'Error!'); 
     
 end
 
@@ -79,13 +82,11 @@ end
 % If there was selected only one seismic volume, no verification need it.
 if nAttributes >= 2
     [dtSample, nSamples, nTraces] = checkSegyData(files);
-
 else
     [segyHeader] = ReadSegyHeader(files{1});
     dtSample= segyHeader.dt/1000;
     nSamples= segyHeader.ns;
     nTraces = segyHeader.ntraces;
-
 end
 
 %% ################## %%
@@ -154,7 +155,7 @@ selectedSurface = selectEqualCoord(nTraces, selectedCoordinates, surfaceData);
 nTracesSelected = size(selectedCoordinates, 1);
 
 % This matrix will store the results of Fractal Dimension calculations.
-resultFractalDim = zeros(nTracesSelected, 3);
+results = zeros(nTracesSelected, 3);
 
 % This vector will store the values ??of R2 in order to make a histogram.
 allR2 = zeros(nTracesSelected, 1);
@@ -178,9 +179,9 @@ coordinatesQC = zeros(NUMTRACESQC, 2);
 % 4. Time interval analysis.
 timeAnalysis =  zeros(nTop+nBottom+1, NUMTRACESQC);
 
-% 5. Save divisor (r) and total length (L). The length of both vectors is
+% 5. Save "dividers" and "length". The length of both vectors is
 % unknown, so pre-allocation is made with a single column.
-divisorLength = zeros(2, 1, NUMTRACESQC);
+dividerLength = zeros(2, 1, NUMTRACESQC);
 
 % Number of the traces used to calculations (the coordinates
 % of the surface is equal to the coordinate of the seismic trace).
@@ -246,7 +247,7 @@ for iPoint = 1 : nTracesSelected
 
     % Continue calculations is seismic attributes data is not empty.
     if ~isEmptyData
-        % Get time sample of surface data. "floor": Round towards -inf.
+        % Get time sample of surface data. "floor": Round towards -Inf.
         timeSample = floor(selectedSurface(iPoint,3));
 
         % Check if "timeSample" is a multiple of sampling interval of seismic
@@ -263,50 +264,46 @@ for iPoint = 1 : nTracesSelected
         
         % Select seismic attributes data between time window previously
         % defined. This will be the data under analysis.
-        analyzedData = zeros(nTop+nBottom+1,nAttributes);
+        analyzedData = zeros(nTop + nBottom + 1, nAttributes);
 
         for i = 1:nAttributes
             analyzedData(:,i) = seismicData(indexTimeSample - nTop : indexTimeSample + nBottom, i);
         end
         
         % Normalization of data
-        normalizedData = normalization(analyzedData , analyzedData);
+        normalizedData = minMaxScaler(analyzedData, MINMAX);
     
-        % Multiplication of the normalized traces by previously defined 
-        % weights.
-        for i=1:nAttributes
-            normalizedData(:,i)= normalizedData(:,i) .* ALPHA(i);
-        end
-
-        % The time column in the window of interest does not use for
-        % Fractal Dimension calculations. It will be use only for QC.
-        % Because the input data was normalized, the time (in the last 
-        % column of the array), must also range from 0 to 1.
-        
-        normalizedData(:,end+1) = zeros(nTop+nBottom+1,1);
-
-        div = 1/(size(normalizedData,1)-1);
-        h=0;
-        for i=1:size(normalizedData,1)
-            normalizedData(i,end)=h*div;
-            h=h+1;
-        end
-        
+        % Weighed normalized data
+        normalizedData = normalizedData .* ALPHA;
+% 
+%         % The time column in the window of interest does not use for
+%         % Fractal Dimension calculations. It will be use only for QC.
+%         % Because the input data was normalized, the time (in the last 
+%         % column of the array), must also range from 0 to 1.
+%         
+%         normalizedData(:,end+1) = zeros(nTop+nBottom+1,1);
+% 
+%         div = 1/(size(normalizedData,1)-1);
+%         h=0;
+%         for i=1:size(normalizedData,1)
+%             normalizedData(i,end)=h*div;
+%             h=h+1;
+%         end
+%         
         % Fractal Dimension calculation
-        [r,L,P,R2]=divplot2_EM(normalizedData);
+        [dividers, length, slope, R2] = divplot2_EM(normalizedData);
 
         % Fractal Dimension of the curve in space N-Dimension.
-        D = 1 + abs(P);
+        fractalDim = 1 + abs(slope);
         
-        % This matrix will keep the results of each FRACTAL DIMENSION
-        % calculations. The order is X-Y-D.
-        resultFractalDim(iPoint,:) = [surfaceData(iPoint,1) surfaceData(iPoint,2) D]; 
+        % Output. The order is X-Y-fractalDim.
+        results(iPoint,:) = [surfaceData(iPoint,1), surfaceData(iPoint,2), fractalDim]; 
 
         % Save R2 values, in order to perform a histogram with the results.
-        allR2(iPoint)=R2;
+        allR2(iPoint) = R2;
         
         % For QC, from 5 random traces, the following data will be saved:
-        % Input traces, trace number, D, coordinates, r-L
+        % Input traces, trace number, fractalDim, coordinates, dividers-length
         try
             conditionQC = any(tracesQC >= traceNumbers(iPoint-1) & tracesQC <= traceNumbers(iPoint));
         catch
@@ -319,13 +316,13 @@ for iPoint = 1 : nTracesSelected
             seismicTraces(:,:,traceQC) = analyzedData;
             
             % Each row will correspond to the data of each trace:
-            % Trace Number - P - D - R2.
+            % Trace Number - slope - fractalDim - R2.
             params(traceQC,1) = traceNum; 
-            params(traceQC,2) = P; 
-            params(traceQC,3) = D; 
+            params(traceQC,2) = slope; 
+            params(traceQC,3) = fractalDim; 
             params(traceQC,4) = R2;
             
-            % Coordinates X/Y - r/L
+            % Coordinates X/Y - dividers/length
             coordinatesQC(traceQC,:) = surfaceData(iPoint,1:2); 
 
             % Time column in window analysis (FD_QC_TIME), according to
@@ -335,10 +332,10 @@ for iPoint = 1 : nTracesSelected
                 timeAnalysis(i,traceQC) = t_ini_analisis + dtSample*(i-1);
             end
             
-            % Divider size "r" and total length "L". The 3rd dimension
+            % Divider size "dividers" and total length "length". The 3rd dimension
             % of the hyper matrix corresponds to each trace.
-            divisorLength(1,1:size(r,2),traceQC) = r; 
-            divisorLength(2,1:size(r,2),traceQC) = L; 
+            dividerLength(1,1:size(dividers,2),traceQC) = dividers; 
+            dividerLength(2,1:size(dividers,2),traceQC) = length; 
 
             traceQC = traceQC + 1;
         end
@@ -361,7 +358,7 @@ end
 % Delete empty traces from Fractal Dimension matrix (coordinates equal to
 % zero). It is possible that they generate some error in surface loading.
 
-FD_erased = reshape(resultFractalDim,nPointsSurface,[])';
+FD_erased = reshape(results,nPointsSurface,[])';
 empty_coord = find(FD_erased==0);
 FD_erased(empty_coord) = [];
 FD_erased = reshape(FD_erased,3,[])';
@@ -372,7 +369,7 @@ dlmwrite(fileFractalDim{1},FD_erased,'delimiter',' ','precision','%15.5f')
 % Graphics.
 % It will be both plots in the same window. 
 for i=1:size(params,1)
-    graph_QC(seismicTraces , params , divisorLength , coordinatesQC , timeAnalysis,...
+    graph_QC(seismicTraces , params , dividerLength , coordinatesQC , timeAnalysis,...
         titlesFiles,i);
 end
 

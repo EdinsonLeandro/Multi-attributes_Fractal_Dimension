@@ -10,23 +10,26 @@ function nSteps = steps_EM(X, divider)
 % This is a modified version to calculate the steps number
 % needed to approximate the trace X with N-Dimension with "divider".
 
+% Number of samples in data.
+[nSamples, ~] = size(X);
+
+% Initialize number of steps and index
 nSteps = 0;
 index = 2;
 
-% Xn = From this point the distance is measured to the next sample.
-% The algotithm starts with the first point
-Xn=X(1,:);
+% sampleRef = Measure de distance from this point to the next sample.
+% The algotithm starts with the first point.
+sampleRef = X(1,:);
 
-[nSamples, ~] = size(X);
 while index <= nSamples
     % It will compare with the given divisor.
 
     % Euclidean distance to the next sample.
-    diff = Xn - X(index,:);
+    diff = sampleRef - X(index,:);
     distanceNext = sqrt(sum(diff.^2,2));
     
     % Euclidean distance to previous sample.
-    diff = Xn - X(index-1, :);
+    diff = sampleRef - X(index-1, :);
     distancePrevious = sqrt(sum(diff.^2,2));
     
     % di = distanceNext
@@ -37,44 +40,50 @@ while index <= nSamples
             ratio = distanceNext/divider;
             nSteps = nSteps+ratio;
             
-            % Select next point
-            Xn= X(index,:);
+            % Select next sample
+            sampleRef = X(index,:);
             index = index + 1;
         else
             % distancePrevious ~= 0
             dk = distanceNext - divider;
             dj = divider - distancePrevious;
-            if dk>dj
-                Xn= X(index-1,:);
+            
+            if dk > dj
+                % Select same sample
+                sampleRef= X(index-1,:);
                 nSteps= nSteps+1;
-            else
-                Xn = X(index,:);
+                
+            elseif dk < dj
+                % Select next sample
+                sampleRef = X(index,:);
                 nSteps = nSteps + 1;
                 index = index + 1;
-            end
-            
-            if dk == dj
+                
+            else
+                % dk == dj
+                % Select same sample
+                sampleRef = X(index-1,:);
                 ratio = distancePrevious/divider;
                 nSteps = nSteps+ratio;
-                Xn = X(index-1,:);
-            end
-        end
+            end % End if
+        end % End if
     
     elseif distanceNext < divider
         if index == nSamples
             ratio = distanceNext/divider;
             nSteps = nSteps+ratio;
             break
-        end
+        end % End if
         %         
         % For distances less than "divider", the fraction "ratio" is calculated
         %         
         index=index+1;
     
     else
-        Xn = X(index,:);
+        % distanceNext == divider
+        sampleRef = X(index,:);
         nSteps = nSteps+1;
         index = index+1;
-    end
+    end % End if
     
 end
