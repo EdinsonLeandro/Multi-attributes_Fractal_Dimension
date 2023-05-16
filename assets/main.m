@@ -123,16 +123,19 @@ nBottom = ceil(TIME_BELOW_HORIZON/dtSample);
 % Open and read all trace headers from segy data
 [~ , allTraceHeaders] = ReadSegy(files{1}, 'SkipData',1);
 
-% Coordinates of seismic traces and Number of traces
+% Coordinates of seismic traces and trace numbers
 coordinatesSeismicTraces = zeros(nTraces, 3);
 
-for iTrace = 1:nTraces
-    % Divide each coordinate by 100 to bring them to metric scale
-    coordinatesSeismicTraces(iTrace, :) = [round(allTraceHeaders(iTrace).SourceX / 100), ...
-                                           round(allTraceHeaders(iTrace).SourceY / 100), ...
-                                           allTraceHeaders(iTrace).TraceNumber];
-end
+% Read X and Y coordinates.
+% <B = A.'> is equal to <B = transpose(A)>
+coordinatesSeismicTraces(:,1) = ReadSegyTraceHeaderValue(files{1}, 'key', 'cdpX').';
+coordinatesSeismicTraces(:,2) = ReadSegyTraceHeaderValue(files{1}, 'key', 'cdpY').';
 
+% Divide each coordinate by 100 (metric scale)
+coordinatesSeismicTraces = round(coordinatesSeismicTraces./100);
+
+% Linear sequence of trace numbers.
+coordinatesSeismicTraces(:, 3) = 1:nTraces;
 
 % Select X-Y coordinates and the number of seismic traces where surface
 % data was interpolated. 
@@ -164,28 +167,24 @@ allR2 = zeros(nTracesSelected, 1);
 % seismic volumes. This will represent random traces, in order to perform
 % Quality Control of Fractal Dimension calculations.
 rng(3, 'twister');
-tracesQC = round(rand(1, NUMTRACESQC) * nTraces);
+nTracesQc = round(rand(1, NUMTRACESQC) * nTraces);
 
-% 1. Save seismic attributes traces.
-seismicTraces = zeros(nTop+nBottom+1, nAttributes, NUMTRACESQC);
+% 1. Save seismic attributes traces for quality control.
+seismicTracesQc = zeros(nTop+nBottom+1, nAttributes, NUMTRACESQC);
 
 % 2. Save the number of traces, slope, Fractal Dimension and the
 % coefficient of determination R2
-params = zeros(NUMTRACESQC, 4);
+paramsQc = zeros(NUMTRACESQC, 4);
 
 % 3. Save traces coordinates for quality control.
-coordinatesQC = zeros(NUMTRACESQC, 2);
+coordinatesQc = zeros(NUMTRACESQC, 2);
 
 % 4. Time interval analysis.
-timeAnalysis =  zeros(nTop+nBottom+1, NUMTRACESQC);
+timeAnalysisQc =  zeros(nTop+nBottom+1, NUMTRACESQC);
 
-% 5. Save "dividers" and "length". The length of both vectors is
-% unknown, so pre-allocation is made with a single column.
-dividerLength = zeros(2, 1, NUMTRACESQC);
-
-% Number of the traces used to calculations (the coordinates
-% of the surface is equal to the coordinate of the seismic trace).
-% traceNumbers = zeros(1, nTracesSelected) ;
+% 5. Save "dividers" and "length" for Quality control. The length of both
+% vectors is unknown, so pre-allocation is made with a single column.
+dividerLengthQc = zeros(2, 1, NUMTRACESQC);
 
 %% ############################################ %%
 %  Multi-attributes Fractal Dimension Algorithm  %
@@ -194,51 +193,22 @@ dividerLength = zeros(2, 1, NUMTRACESQC);
 % Initialize waitbar
 wb = waitbar(0, 'Analyzing data');
 
-% traceNum = index that locates the trace number read.
-traceNum = 1;
-
-% conditionQC: Quality Control Condition. Sets the selection of
-% the random trace to save its corresponding data.
-conditionQC = false;
-
-% traceQC: index that indicates the trace number to QC.
-traceQC = 1;
+% indexQc: index that indicates the trace number to Quality contol.
+indexQc = 1;
 
 for iPoint = 1 : nTracesSelected
     
     % Plot waitbar
     waitbar(iPoint/nTracesSelected, wb)
     
-%     % Find the position where the surface coordinate is equal to seismic
-%     % trace coordinate.
-%     condition_time_suface = false;
-%     while condition_time_suface == false && traceNum < nTraces
-%         condition_time_suface = isequal(surfaceData(iPoint,1:2), coordinatesSeismicTraces(traceNum,1:2));
-%         traceNum = traceNum + 1;
-%     end
-% 
-%     % When traceNum>nTraces the search has reached the end of seismic data. This
-%     % can also happen if the coordinates of the area of ??interest are not
-%     % within the seismic data. In either case, program execution must stop.
-%     
-%     if traceNum >= nTraces
-%         errordlg('Finalizó la búsqueda dentro de los datos sísmicos',...
-%                 'Error!');
-%         break
-%     end
-%     
-%     traceNum = traceNum - 1;
-%     
-%     traceNumbers(iPoint) = traceNum;
-    
     fprintf('Seismic Trace number: %d', selectedCoordinates(iPoint, 3));
 
     % Read trace number selected in seismic data.
     seismicData = zeros(nSamples, nAttributes);
-    for iAttribute = 1 : nAttributes
+    for jAttribute = 1 : nAttributes
         % Read Segy data of each input
-        [Data, ~] = ReadSegy(files{iAttribute}, 'traces', selectedCoordinates(iPoint, 3));
-        seismicData(:, iAttribute) = Data;
+        [Data, ~] = ReadSegy(files{jAttribute}, 'traces', selectedCoordinates(iPoint, 3));
+        seismicData(:, jAttribute) = Data;
     end
     
     % Check if any of the seismic attributes data are empty. If this case,
@@ -275,21 +245,7 @@ for iPoint = 1 : nTracesSelected
     
         % Weighed normalized data
         normalizedData = normalizedData .* ALPHA;
-% 
-%         % The time column in the window of interest does not use for
-%         % Fractal Dimension calculations. It will be use only for QC.
-%         % Because the input data was normalized, the time (in the last 
-%         % column of the array), must also range from 0 to 1.
-%         
-%         normalizedData(:,end+1) = zeros(nTop+nBottom+1,1);
-% 
-%         div = 1/(size(normalizedData,1)-1);
-%         h=0;
-%         for i=1:size(normalizedData,1)
-%             normalizedData(i,end)=h*div;
-%             h=h+1;
-%         end
-%         
+
         % Fractal Dimension calculation
         [dividers, length, slope, R2] = divplot2_EM(normalizedData);
 
@@ -302,42 +258,35 @@ for iPoint = 1 : nTracesSelected
         % Save R2 values, in order to perform a histogram with the results.
         allR2(iPoint) = R2;
         
-        % For QC, from 5 random traces, the following data will be saved:
-        % Input traces, trace number, fractalDim, coordinates, dividers-length
-        try
-            conditionQC = any(tracesQC >= traceNumbers(iPoint-1) & tracesQC <= traceNumbers(iPoint));
-        catch
-            continue
-        end
-        
-        if conditionQC
+        % Check if the trace under analysis is the selected for quality control
+        if ~isempty(intersect(nTracesQc, selectedCoordinates(iPoint, 3)))
             % Input Trace: Each 3D from the matrix Tr_Analysis_norm_QC has
             % data traces.
-            seismicTraces(:,:,traceQC) = analyzedData;
+            seismicTracesQc(:, :, indexQc) = analyzedData;
             
-            % Each row will correspond to the data of each trace:
-            % Trace Number - slope - fractalDim - R2.
-            params(traceQC,1) = traceNum; 
-            params(traceQC,2) = slope; 
-            params(traceQC,3) = fractalDim; 
-            params(traceQC,4) = R2;
+            % Each column will correspond to the data of each trace:
+            % Number of trace - slope - fractalDim - R2.
+            paramsQc(indexQc, 1) = selectedCoordinates(iPoint, 3); 
+            paramsQc(indexQc, 2) = slope; 
+            paramsQc(indexQc, 3) = fractalDim; 
+            paramsQc(indexQc, 4) = R2;
             
             % Coordinates X/Y - dividers/length
-            coordinatesQC(traceQC,:) = surfaceData(iPoint,1:2); 
+            coordinatesQc(indexQc, :) = surfaceData(iPoint, 1:2); 
 
-            % Time column in window analysis (FD_QC_TIME), according to
-            % time found in the surface of interest.            
-            t_ini_analisis= timeSample - (nTop * dtSample);            
+            % Time column under analysis, according to time found in the
+            % surface of interest.            
+            initialTime = timeSample - (nTop * dtSample);            
             for i = 1 : (nTop+nBottom+1)
-                timeAnalysis(i,traceQC) = t_ini_analisis + dtSample*(i-1);
+                timeAnalysisQc(i,indexQc) = initialTime + dtSample*(i-1);
             end
             
-            % Divider size "dividers" and total length "length". The 3rd dimension
+            % "Dividers" size and total "length". The 3rd dimension
             % of the hyper matrix corresponds to each trace.
-            dividerLength(1,1:size(dividers,2),traceQC) = dividers; 
-            dividerLength(2,1:size(dividers,2),traceQC) = length; 
+            dividerLengthQc(1, 1:size(dividers,2), indexQc) = dividers; 
+            dividerLengthQc(2, 1:size(dividers,2), indexQc) = length; 
 
-            traceQC = traceQC + 1;
+            indexQc = indexQc + 1;
         end
         
         st = fclose('all');
@@ -368,8 +317,8 @@ dlmwrite(fileFractalDim{1},FD_erased,'delimiter',' ','precision','%15.5f')
 
 % Graphics.
 % It will be both plots in the same window. 
-for i=1:size(params,1)
-    graph_QC(seismicTraces , params , dividerLength , coordinatesQC , timeAnalysis,...
+for i=1:size(paramsQc,1)
+    graph_QC(seismicTracesQc , paramsQc , dividerLengthQc , coordinatesQc , timeAnalysisQc,...
         titlesFiles,i);
 end
 

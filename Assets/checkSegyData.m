@@ -31,7 +31,7 @@ for iFile = 1:nFiles
 end
 
 % nnz() returns the number of nonzero matrix elements.
-if nnz( diff(params, 1) ) ~= 0
+if (nnz( diff(params, 1) ) ~= 0) && (nFiles > 1)
     % There is a difference not equal to zero.
     error('Error in SegyHeader of seismic volumes');
 end
@@ -57,8 +57,8 @@ for h=1:2
 end
 
 % any() True if any element of a vector is a nonzero number.
-if any(checkCoordinate(:))
-    disp('Error in seismic volume coordinates');
+if (any(checkCoordinate(:))) && (nFiles > 1)
+    error('Error in seismic volume coordinates');
 end
 
 % Return variables
