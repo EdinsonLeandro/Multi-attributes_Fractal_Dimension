@@ -37,7 +37,7 @@ delta = diff(X).^2;
 sumDelta = sum(delta,2);
 
 % Maximun and minimun divider.
-maxDivider = 1/4*mean(sumDelta);
+maxDivider = 1/8*mean(sumDelta);
 minDivider = sqrt(maxDivider);
 
 % We don't know the number of interations. Therefore, preallocation of 

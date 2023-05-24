@@ -6,8 +6,8 @@ clear all
 % ###################################################  %
 
 % Definition of time window, above and below the horizon of interest.
-TIME_ABOVE_HORIZON = 0;
-TIME_BELOW_HORIZON = 20;
+TIME_ABOVE_HORIZON = 10;
+TIME_BELOW_HORIZON = 50;
 
 % Array of strings containing the names of the seismic attribute files.
 files = {'Data/Inline 900-903/seismic_amplitude_IL_900-903.segy', ...
@@ -318,9 +318,5 @@ for iParam = 1:size(paramsQc,1)
         coordinatesQc, timeAnalysisQc, titlesFiles, iParam);
 end
 
-% R2 Histogram. All possible empty cells are erased.
-figure('Name','R^2 histogram in Fractal Dimension Calculation')
-allR2(allR2==0)=[];
-hist(allR2,(0.1:0.1:0.9));
-ylabel('Frecuencia'), xlabel('R^2');
-title('Histograma de Frecuencia Absoluta. Coeficiente de Determinación.');
+% R2 Histogram.
+qualityControlHist(allR2)
