@@ -120,9 +120,6 @@ nBottom = ceil(TIME_BELOW_HORIZON/dtSample);
 % interval, the number of samples and the number of traces are the same.
 % Also, they are divided by 100 to bring them to metric scale.
 
-% Open and read all trace headers from segy data
-[~ , allTraceHeaders] = ReadSegy(files{1}, 'SkipData',1);
-
 % Coordinates of seismic traces and trace numbers
 coordinatesSeismicTraces = zeros(nTraces, 3);
 
@@ -160,7 +157,7 @@ nTracesSelected = size(selectedCoordinates, 1);
 % This matrix will store the results of Fractal Dimension calculations.
 results = zeros(nTracesSelected, 3);
 
-% This vector will store the values ??of R2 in order to make a histogram.
+% This vector will store the values of R2 in order to make a histogram.
 allR2 = zeros(nTracesSelected, 1);
 
 % Definition of random numbers between 1 and the number of traces in
@@ -169,26 +166,30 @@ allR2 = zeros(nTracesSelected, 1);
 rng(3, 'twister');
 nTracesQc = round(rand(1, NUMTRACESQC) * nTraces);
 
-% 1. Save seismic attributes traces for quality control.
+% Matrices for Quality control.
+% 1. Seismic attributes traces.
 seismicTracesQc = zeros(nTop+nBottom+1, nAttributes, NUMTRACESQC);
 
-% 2. Save the number of traces, slope, Fractal Dimension and the
-% coefficient of determination R2
+% 2. Number of traces, slope, Fractal Dimension and the coefficient of
+% determination R2.
 paramsQc = zeros(NUMTRACESQC, 4);
 
-% 3. Save traces coordinates for quality control.
+% 3. Traces coordinates.
 coordinatesQc = zeros(NUMTRACESQC, 2);
 
 % 4. Time interval analysis.
 timeAnalysisQc =  zeros(nTop+nBottom+1, NUMTRACESQC);
 
-% 5. Save "dividers" and "length" for Quality control. The length of both
-% vectors is unknown, so pre-allocation is made with a single column.
+% 5. "Dividers" and "Length". Number of columns of both vectors is unknown,
+% so pre-allocation is made with one column.
 dividerLengthQc = zeros(2, 1, NUMTRACESQC);
 
 %% ############################################ %%
 %  Multi-attributes Fractal Dimension Algorithm  %
 %  ############################################  %
+
+% Close all open files
+fclose('all');
 
 % Initialize waitbar
 wb = waitbar(0, 'Analyzing data');
@@ -200,8 +201,6 @@ for iPoint = 1 : nTracesSelected
     
     % Plot waitbar
     waitbar(iPoint/nTracesSelected, wb)
-    
-    fprintf('Seismic Trace number: %d', selectedCoordinates(iPoint, 3));
 
     % Read trace number selected in seismic data.
     seismicData = zeros(nSamples, nAttributes);
@@ -253,7 +252,9 @@ for iPoint = 1 : nTracesSelected
         fractalDim = 1 + abs(slope);
         
         % Output. The order is X-Y-fractalDim.
-        results(iPoint,:) = [surfaceData(iPoint,1), surfaceData(iPoint,2), fractalDim]; 
+        results(iPoint,:) = [selectedCoordinates(iPoint,1), ...
+                             selectedCoordinates(iPoint,2), ...
+                             fractalDim]; 
 
         % Save R2 values, in order to perform a histogram with the results.
         allR2(iPoint) = R2;
@@ -279,7 +280,7 @@ for iPoint = 1 : nTracesSelected
             initialTime = timeSample - (nTop * dtSample);            
             for i = 1 : (nTop+nBottom+1)
                 timeAnalysisQc(i,indexQc) = initialTime + dtSample*(i-1);
-            end
+            end % End for
             
             % "Dividers" size and total "length". The 3rd dimension
             % of the hyper matrix corresponds to each trace.
@@ -287,43 +288,38 @@ for iPoint = 1 : nTracesSelected
             dividerLengthQc(2, 1:size(dividers,2), indexQc) = length; 
 
             indexQc = indexQc + 1;
-        end
-        
-        st = fclose('all');
-    else  
-        % Close all open segy files.
-        st = fclose('all');
-        continue
-    end
+        end % End if
+
+    % Close all open files.
+    fclose('all');
     
-    % Perhaps it would be necessary to establish a condition if it does not
-    % obtain any coordinate, which mean that the surface and seismic volume
-    % wouldn't be in the same order or do not have the same coordinates.
+    end % End if
 
-end 
+end % End for
 
-%% Writing the results file and final graphics.
+% Close waitbar
+close(wb)
 
-% Delete empty traces from Fractal Dimension matrix (coordinates equal to
-% zero). It is possible that they generate some error in surface loading.
+%% Results.
 
-FD_erased = reshape(results,nPointsSurface,[])';
-empty_coord = find(FD_erased==0);
-FD_erased(empty_coord) = [];
-FD_erased = reshape(FD_erased,3,[])';
+% Remove zero rows (empty traces) from Fractal Dimension matrix.
+results( ~any(results, 2), : ) = [];
 
 % Fractal Dimension surface file.
-dlmwrite(fileFractalDim{1},FD_erased,'delimiter',' ','precision','%15.5f')
+dlmwrite(fileFractalDim{1}, results, 'delimiter',' ','precision','%15.5f')
 
-% Graphics.
+% Close all open files
+fclose('all');
+
+% Quality Control Charts.
 % It will be both plots in the same window. 
-for i=1:size(paramsQc,1)
-    graph_QC(seismicTracesQc , paramsQc , dividerLengthQc , coordinatesQc , timeAnalysisQc,...
-        titlesFiles,i);
+for iParam = 1:size(paramsQc,1)
+    qualityControlCharts(seismicTracesQc, paramsQc, dividerLengthQc, ...
+        coordinatesQc, timeAnalysisQc, titlesFiles, iParam);
 end
 
 % R2 Histogram. All possible empty cells are erased.
-figure('Name','Histograma de R^2 en cálculo de Dimensión Fractal')
+figure('Name','R^2 histogram in Fractal Dimension Calculation')
 allR2(allR2==0)=[];
 hist(allR2,(0.1:0.1:0.9));
 ylabel('Frecuencia'), xlabel('R^2');
